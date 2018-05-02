@@ -1,0 +1,199 @@
+---
+title: "USA all counties ADI"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidycensus)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(psych)
+library(devtools)
+library(ggthemes)
+options(tigris_class = "sf")
+options(tigris_use_cache = TRUE)
+library(viridis)
+library(mice)
+opioid=read.csv("Merged_CDC_Opioid_Deaths_plus_Medicare_Opioid_Claims_and_ACS_Poverty.csv")
+census_api_key("f08a665e7983480461b38399de889002b95d0d73")
+```
+
+
+```{r, include=FALSE}
+#get raw data for all counties
+raw2016 <- get_acs(geography = "county", 
+              variables = c("B01003_001","B19013_001","B19001_002","B19001_011","B19001_012","B19001_013","B19001_014","B19001_015","B19001_016","B19001_017","B17010_001","B17010_002","B25003_001","B25003_002","C17002_001","C17002_002","C17002_003","C17002_004","C17002_005","B25044_001","B25044_003","B25044_010","B25014_001","B25014_005","B25014_006","B25014_007","B25014_011","B25014_012","B25014_013","B25088_001","B25064_001","B25077_001","C24010_001","C24010_003","C24010_039","B23025_001","B23025_005","B15003_001","B15003_002","B15003_003","B15003_004","B15003_005","B15003_006","B15003_007","B15003_008","B15003_009","B15003_010","B15003_011","B15003_012","B15003_017","B15003_018","B15003_019","B15003_020","B15003_021","B15003_022","B15003_023","B15003_024","B15003_025","B23008_001","B23008_008", "B23008_021"), 
+              output = "wide", year = 2016)
+
+#delete margin of errors and keep only estimates
+usa <- raw2016 %>% 
+  select(GEOID,  NAME, B01003_001E, B19013_001E,  B19001_002E, B19001_011E, B19001_012E,
+         B19001_013E, B19001_014E, B19001_015E, B19001_016E, B19001_017E,
+         B17010_001E, B17010_002E, B25003_001E, B25003_002E, C17002_001E,
+         C17002_002E, C17002_003E, C17002_004E, C17002_005E, B25044_001E,
+         B25044_003E, B25044_010E, B25014_001E, B25014_005E, B25014_006E,
+         B25014_007E, B25014_011E, B25014_012E, B25014_013E, B25088_001E,
+         B25064_001E, B25077_001E, C24010_001E, C24010_003E, C24010_039E, 
+         B23025_001E, B23025_005E, B15003_001E, B15003_002E, B15003_003E, 
+         B15003_004E, B15003_005E, B15003_006E, B15003_007E, B15003_008E, 
+         B15003_009E, B15003_010E, B15003_011E, B15003_012E, B15003_017E, 
+         B15003_018E, B15003_019E, B15003_020E, B15003_021E, B15003_022E, 
+         B15003_023E, B15003_024E, B15003_025E, B23008_001E, B23008_008E,  
+         B23008_021E) %>%
+  mutate(Fpoverty        = B17010_002E / B17010_001E,
+         OwnerOcc        = B25003_002E / B25003_001E,
+         incomegreater50 = B19001_011E + B19001_012E + B19001_013E + B19001_014E +
+                           B19001_015E + B19001_016E + B19001_017E,
+         IncomeDisparity = log(100*(B19001_002E / incomegreater50)),
+         less150poverty  = C17002_002E + C17002_003E + C17002_004E + C17002_005E,
+         less150FPL      = less150poverty / C17002_001E,
+         oneparent       = B23008_008E + B23008_021E,
+         singlePHH       = oneparent / B23008_001E,
+         vehiclesum      = B25044_003E + B25044_010E,
+         pnovehicle      = vehiclesum / B25044_001E,
+         sumprofs        = C24010_003E + C24010_039E,
+         whitecollar     = sumprofs / C24010_001E,
+         unemployed      = B23025_005E / B23025_001E,
+         Nhighschoolup   = B15003_017E + B15003_018E + B15003_019E + B15003_020E +
+                           B15003_021E + B15003_022E + B15003_023E + B15003_024E +
+                           B15003_025E,
+         Phighschoolup   = Nhighschoolup / B15003_001E,
+         Nless9thgrade   = B15003_002E + B15003_003E + B15003_004E + B15003_005E +
+                           B15003_006E + B15003_007E + B15003_008E + B15003_009E + 
+                           B15003_010E + B15003_011E + B15003_012E,
+         Pless9grade     = Nless9thgrade / B15003_001E,
+         SUMcrowded      = B25014_005E + B25014_006E + B25014_007E + B25014_011E + 
+                           B25014_012E + B25014_013E,
+         Ocrowded        = SUMcrowded / B25014_001E)
+#select only variables of interest and rename for clarity       
+usa <- usa %>% 
+  select(NAME, B19013_001E, B25088_001E, B25064_001E, B25077_001E, Fpoverty,
+         OwnerOcc, IncomeDisparity, less150FPL, singlePHH, pnovehicle, 
+         whitecollar, unemployed, Phighschoolup, Pless9grade, Ocrowded) %>%
+  rename(
+    "Median_Household_Income" = B19013_001E,
+         "Median_Mortgage"=B25088_001E,
+         "Median_Rent"=B25064_001E,
+         "Median_House_Value"=B25077_001E ,
+         "Percentage_of_Families_Living_in_Poverty"=Fpoverty,
+         "Percentage_of_Owner_Occupied_Housing"=OwnerOcc,
+         "Ratio_of_those_making_less_than_10k_to_those_making_more_than_50k"=IncomeDisparity, 
+         "Percentage_of_People_Living_Below_150%_of_Federal_Poverty_Level"=less150FPL,     
+         "Percentage_of_Children_in_Single_Parent_Households" =  singlePHH ,    
+         "Percentage_of_Households_with_No_Vehicle" = pnovehicle,
+         "Percentage_of People_with_White_Collar_Jobs"  = whitecollar,   
+         "Percentage_of_People_Unemployed" = unemployed,    "Percentage_of_People_with_At_Least_High_School_Education"= Phighschoolup,  
+         "Percentage_of_People_with_with_Less_than_9th_Grade_Education" = Pless9grade,
+         "Percentage_of_Households_with_More_than_One_Person_Per_Room"=  Ocrowded)
+usaf=usa
+is.na(usaf) <- do.call(cbind,lapply(usaf, is.infinite))
+tempdf=mice(usaf,m=5,maxit=50,meth='pmm',seed=500)
+usaf=complete(tempdf,1)
+#factor analysis
+rownames(usaf)==usaf$NAME
+usaf$NAME=NULL
+fit<-fa(usaf, nfactors = 1, rotate = "none", fm = "pa", max.iter = 25)
+```
+  
+```{r}
+#ADI for all counties
+usa$ADI=as.numeric(fit$scores*20+100)
+usa2016 = usa%>%select(NAME, ADI)
+#us county income
+us_county_income <- get_acs(geography = "county", variables = "B19013_001", year = 2016,
+                            shift_geo = TRUE, geometry = TRUE)
+```
+
+```{r}
+#select variables of interest in opioid data
+opioid <- opioid %>% 
+  mutate(Death_Rate_2016 = (dratelow.2016+dratehi3.2016)/2) %>%
+  select(State, Geography,OpioidPrescribingRate15, pbp,Death_Rate_2016)%>%
+  rename("Opioid_Prescribing_Rate" = OpioidPrescribingRate15,
+         "Percent_below_Poverty" = pbp, "NAME" = Geography)
+#merge to include ADI
+opioid2016 <- merge(x = opioid, y = usa2016, by = "NAME", all.x = T)
+```
+
+
+```{r}
+#set ADI by quntile 
+us_county_death=merge(x = us_county_income, y = opioid2016, by = "NAME", all.x = T) %>% select(NAME, Death_Rate_2016, Percent_below_Poverty,estimate, State,Opioid_Prescribing_Rate,  ADI) %>% rename("Median Household_Income_Estimate" = estimate)
+us_county_death$Quantile[us_county_death$ADI<87.75]="1 (Lease Deprived)"
+us_county_death$Quantile[us_county_death$ADI>87.75 & us_county_death$ADI<97.86]=2
+us_county_death$Quantile[us_county_death$ADI>97.86 & us_county_death$ADI<109.66]=3
+us_county_death$Quantile[us_county_death$ADI>109.66]="4 (Most Deprived)"
+us_county_death$Quantile<-as.factor(us_county_death$Quantile)
+
+oh_county = us_county_death%>%filter(State == "Ohio")
+
+```
+
+```{r}
+fit1 = lm(ADI~Death_Rate_2016, data = oh_county)
+summary(fit1)
+```
+
+
+```{r}
+theme_update(plot.title = element_text(hjust = 0.5))
+p1=ggplot(us_county_death) + 
+  geom_sf(aes(fill = Death_Rate_2016), color = NA) + 
+  coord_sf(datum = NA) + 
+  theme_minimal() + 
+  scale_fill_viridis()+
+  ggtitle("US Opioid Mortality Rate by County")
+p2=ggplot(us_county_death) + 
+  geom_sf(aes(fill = Percent_below_Poverty), color = NA) + 
+  coord_sf(datum = NA) + 
+  theme_minimal() + 
+  scale_fill_viridis()
+p3=ggplot(us_county_death)+
+  geom_sf(aes(fill=ADI), color = NA)+
+  coord_sf(datum = NA) + 
+  theme_minimal() + 
+  scale_fill_viridis()
+p4=ggplot(us_county_income) + 
+  geom_sf(aes(fill = estimate), color = NA) + 
+  coord_sf(datum = NA) + 
+  theme_minimal() + 
+  scale_fill_viridis()
+p5=ggplot(na.omit(oh_county), aes(x = Opioid_Prescribing_Rate, y = Death_Rate_2016, color = Quantile, shape = Quantile)) + geom_point(size = 2) +
+  geom_smooth(method = "lm", color = "red", se = F) +
+facet_wrap(~ Quantile) +
+guides(color = "none", shape = "none") +
+labs(x = "Opioid Prescribing Rate (%)", y = "Opioid Related Death (%)")+
+  theme_minimal()
+p6 = ggplot(na.omit(oh_county), aes(x = ADI, y = Death_Rate_2016)) + geom_point(size = 2) +
+  geom_smooth(method = "lm", color = "red", se = F) +
+  theme_minimal()+
+labs(x = "Area Deprivation Index", y = "Opioid Related Death (%)")
+p7 = oh_county %>% ggplot(aes(fill = Death_Rate_2016, color = Death_Rate_2016)) + 
+  facet_wrap(~Quantile) + 
+    geom_sf() + 
+    coord_sf(crs = 26915) + 
+  scale_fill_viridis() +
+  scale_color_viridis()+
+  scale_color_viridis()+
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_blank(),
+        panel.grid.major = element_line(colour = 'transparent'))
+```
+
+
+```{r}
+p1
+p2
+p3
+p4
+p5
+p6
+p7
+```
+
